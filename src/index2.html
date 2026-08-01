@@ -1,0 +1,1180 @@
+<!DOCTYPE html>
+<html lang="fr" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>JETON-QR Pro+</title>
+    <link rel="stylesheet" href="vendor/fontawesome/css/all.min.css">
+    <!-- Librairies pour QR et PDF -->
+    <script src="vendor/qrcode.min.js"></script>
+    <script src="vendor/html2pdf.bundle.min.js"></script>
+    <style>
+        /* ===== VARIABLES ===== */
+        :root {
+            --bg: #F2F4F8;
+            --card: #FFFFFF;
+            --text: #1A1A2E;
+            --text-light: #6B7280;
+            --border: #E5E7EB;
+            --primary: #6C3CE1;
+            --primary-dark: #5228B5;
+            --primary-light: #E8E0F9;
+            --shadow: 0 4px 20px rgba(0,0,0,0.08);
+            --radius: 16px;
+            --nav-height: 70px;
+            --transition: 0.25s ease;
+        }
+        [data-theme="dark"] {
+            --bg: #0F172A;
+            --card: #1E293B;
+            --text: #F1F5F9;
+            --text-light: #94A3B8;
+            --border: #334155;
+            --primary: #8B5CF6;
+            --primary-dark: #7C3AED;
+            --primary-light: #2D1B4E;
+            --shadow: 0 4px 20px rgba(0,0,0,0.4);
+        }
+        [data-accent="blue"] { --primary: #2563EB; --primary-dark: #1D4ED8; --primary-light: #DBEAFE; }
+        [data-accent="green"] { --primary: #059669; --primary-dark: #047857; --primary-light: #D1FAE5; }
+        [data-accent="red"] { --primary: #DC2626; --primary-dark: #B91C1C; --primary-light: #FEE2E2; }
+        [data-accent="orange"] { --primary: #EA580C; --primary-dark: #C2410C; --primary-light: #FFEDD5; }
+        [data-theme="dark"][data-accent="blue"] { --primary-light: #1E3A5F; }
+        [data-theme="dark"][data-accent="green"] { --primary-light: #064E3B; }
+        [data-theme="dark"][data-accent="red"] { --primary-light: #7F1D1D; }
+        [data-theme="dark"][data-accent="orange"] { --primary-light: #7C2D12; }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; font-family: 'Segoe UI', system-ui, sans-serif; }
+        body {
+            background: var(--bg);
+            color: var(--text);
+            min-height: 100vh;
+            padding-bottom: calc(var(--nav-height) + 16px);
+            transition: background var(--transition), color var(--transition);
+            display: flex;
+            flex-direction: column;
+        }
+        .app-container {
+            max-width: 480px;
+            width: 100%;
+            margin: 0 auto;
+            padding: 16px 16px 0;
+            flex: 1;
+        }
+        .view { display: none; animation: fadeIn 0.3s ease; }
+        .view.active { display: block; }
+        @keyframes fadeIn { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:translateY(0); } }
+
+        .page-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+        .page-header h1 {
+            font-size: 1.6rem;
+            font-weight: 700;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .page-header h1 i { color: var(--primary); }
+        .page-header .badge {
+            background: var(--primary-light);
+            color: var(--primary-dark);
+            padding: 2px 12px;
+            border-radius: 40px;
+            font-size: 0.75rem;
+            font-weight: 700;
+        }
+
+        .card {
+            background: var(--card);
+            border-radius: var(--radius);
+            box-shadow: var(--shadow);
+            padding: 20px;
+            margin-bottom: 20px;
+            transition: background var(--transition), box-shadow var(--transition);
+        }
+        .card-title {
+            font-size: 1.1rem;
+            font-weight: 600;
+            margin-bottom: 12px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        /* ===== SCANNER ===== */
+        .video-wrapper {
+            position: relative;
+            width: 100%;
+            aspect-ratio: 4/3;
+            border-radius: 12px;
+            overflow: hidden;
+            background: #000;
+            margin-bottom: 16px;
+        }
+        #video { width:100%; height:100%; object-fit:cover; display:block; }
+        .scan-overlay { position:absolute; inset:0; pointer-events:none; }
+        .scan-overlay .corner {
+            position:absolute; width:24px; height:24px;
+            border:3px solid #4cd137;
+            filter:drop-shadow(0 0 8px #4cd13788);
+        }
+        .scan-overlay .corner.tl { top:16px; left:16px; border-right:none; border-bottom:none; }
+        .scan-overlay .corner.tr { top:16px; right:16px; border-left:none; border-bottom:none; }
+        .scan-overlay .corner.bl { bottom:16px; left:16px; border-right:none; border-top:none; }
+        .scan-overlay .corner.br { bottom:16px; right:16px; border-left:none; border-top:none; }
+        .scan-line {
+            position:absolute; left:10%; width:80%; height:2px;
+            background:linear-gradient(90deg, transparent, #4cd137, transparent);
+            top:20%; animation:scanMove 2.2s ease-in-out infinite;
+            box-shadow:0 0 20px #4cd13788;
+        }
+        @keyframes scanMove { 0%{top:15%;opacity:1;} 50%{top:80%;opacity:1;} 100%{top:15%;opacity:1;} }
+
+        .controls-row {
+            display:flex; flex-wrap:wrap; gap:10px; justify-content:center; margin:12px 0 8px;
+        }
+        .controls-row button {
+            padding:10px 18px; border:none; border-radius:50px; font-weight:600; font-size:0.9rem;
+            cursor:pointer; transition:var(--transition); display:flex; align-items:center; gap:6px;
+            background:var(--primary-light); color:var(--primary-dark);
+        }
+        .controls-row button:hover { transform:translateY(-2px); box-shadow:0 4px 12px rgba(108,60,225,0.2); }
+        .controls-row button:active { transform:scale(0.96); }
+        .controls-row button.primary { background:var(--primary); color:white; }
+        .controls-row button.danger { background:#EF4444; color:white; }
+        .controls-row button.success { background:#10B981; color:white; }
+        .controls-row button:disabled { opacity:0.5; cursor:not-allowed; transform:none !important; box-shadow:none !important; }
+
+        .result-box {
+            background:var(--bg); border-radius:12px; padding:14px 16px;
+            display:flex; flex-wrap:wrap; align-items:center; gap:10px;
+            border:1px solid var(--border); margin-top:12px;
+            transition: background var(--transition), border var(--transition);
+        }
+        .result-box .label { font-weight:600; color:var(--text-light); font-size:0.85rem; }
+        .result-box .value { flex:1; word-break:break-all; font-weight:500; min-height:24px; }
+        .result-box .type-badge {
+            background:var(--primary-light); color:var(--primary-dark);
+            padding:2px 12px; border-radius:40px; font-size:0.7rem; font-weight:700; text-transform:uppercase;
+        }
+        .result-box .actions { display:flex; gap:6px; flex-wrap:wrap; }
+        .result-box .actions button {
+            background:white; border:1px solid var(--border); border-radius:40px;
+            padding:5px 12px; font-size:0.8rem; font-weight:600; cursor:pointer;
+            transition:var(--transition); color:var(--text);
+        }
+        .result-box .actions button:hover { background:var(--primary); color:white; border-color:var(--primary); }
+
+        /* ===== GÉNÉRATEUR ===== */
+        .qr-input-group {
+            display:flex; flex-direction:column; gap:12px; margin:16px 0;
+        }
+        .qr-input-group textarea {
+            width:100%; padding:12px; border-radius:12px; border:1px solid var(--border);
+            background:var(--bg); color:var(--text); font-size:1rem; resize:vertical; min-height:80px;
+            transition:border var(--transition);
+        }
+        .qr-input-group textarea:focus { outline:none; border-color:var(--primary); box-shadow:0 0 0 3px var(--primary-light); }
+        .qr-preview {
+            display:flex; flex-direction:column; align-items:center; gap:12px; padding:16px;
+            background:var(--bg); border-radius:12px; border:1px solid var(--border);
+        }
+        .qr-preview #qrcode { padding:12px; background:white; border-radius:8px; }
+        .qr-preview .qr-actions { display:flex; gap:8px; flex-wrap:wrap; justify-content:center; }
+        .qr-preview .qr-actions button {
+            padding:8px 16px; border:none; border-radius:40px; font-weight:600;
+            cursor:pointer; transition:var(--transition); background:var(--primary); color:white;
+        }
+        .qr-preview .qr-actions button:hover { opacity:0.85; transform:scale(1.02); }
+
+        /* ===== JETONS ===== */
+        .filter-bar {
+            display:flex; gap:8px; margin-bottom:12px; flex-wrap:wrap;
+        }
+        .filter-bar input, .filter-bar select {
+            padding:8px 12px; border-radius:40px; border:1px solid var(--border);
+            background:var(--bg); color:var(--text); font-size:0.9rem; flex:1; min-width:120px;
+            transition:border var(--transition);
+        }
+        .filter-bar input:focus, .filter-bar select:focus { outline:none; border-color:var(--primary); box-shadow:0 0 0 3px var(--primary-light); }
+
+        .table-wrap { overflow-x:auto; border-radius:12px; border:1px solid var(--border); }
+        table { width:100%; border-collapse:collapse; font-size:0.9rem; }
+        table th {
+            background:var(--bg); font-weight:600; color:var(--text-light);
+            padding:10px 12px; text-align:left; border-bottom:2px solid var(--border);
+        }
+        table td { padding:10px 12px; border-bottom:1px solid var(--border); color:var(--text); }
+        table tbody tr:hover { background:var(--primary-light); opacity:0.9; }
+        table .empty-row td { text-align:center; color:var(--text-light); padding:30px 0; }
+        .table-actions { display:flex; gap:4px; justify-content:center; }
+        .table-actions button {
+            background:none; border:none; cursor:pointer; font-size:1rem; padding:4px 6px;
+            border-radius:40px; transition:var(--transition); color:var(--text-light);
+        }
+        .table-actions button:hover { background:var(--primary-light); color:var(--primary-dark); }
+        .table-actions button.del:hover { background:#FEE2E2; color:#EF4444; }
+
+        /* ===== HISTORIQUE ===== */
+        .history-search {
+            display:flex; gap:8px; margin-bottom:12px;
+        }
+        .history-search input {
+            flex:1; padding:8px 14px; border-radius:40px; border:1px solid var(--border);
+            background:var(--bg); color:var(--text); font-size:0.9rem; transition:var(--transition);
+        }
+        .history-search input:focus { outline:none; border-color:var(--primary); box-shadow:0 0 0 3px var(--primary-light); }
+        .history-list {
+            max-height:340px; overflow-y:auto; border-radius:12px; border:1px solid var(--border);
+        }
+        .history-item {
+            display:flex; justify-content:space-between; align-items:center;
+            padding:10px 14px; border-bottom:1px solid var(--border); transition:var(--transition);
+        }
+        .history-item:last-child { border-bottom:none; }
+        .history-item:hover { background:var(--bg); }
+        .history-item .content { display:flex; flex-direction:column; gap:2px; flex:1; }
+        .history-item .content .data { font-weight:500; word-break:break-all; }
+        .history-item .content .meta {
+            font-size:0.7rem; color:var(--text-light); display:flex; gap:10px; flex-wrap:wrap;
+        }
+        .history-item .content .meta .type-tag {
+            background:var(--primary-light); color:var(--primary-dark);
+            padding:0 10px; border-radius:40px; font-weight:700;
+        }
+        .history-item .delete-btn {
+            background:none; border:none; color:#EF4444; cursor:pointer;
+            padding:4px 8px; border-radius:40px; transition:var(--transition);
+        }
+        .history-item .delete-btn:hover { background:#FEE2E2; }
+        .history-empty { text-align:center; padding:30px 0; color:var(--text-light); }
+        .history-actions {
+            display:flex; gap:8px; flex-wrap:wrap; margin-top:12px;
+        }
+        .history-actions button {
+            background:var(--bg); border:none; padding:6px 14px; border-radius:40px;
+            font-size:0.85rem; font-weight:600; cursor:pointer; transition:var(--transition);
+            display:flex; align-items:center; gap:6px; color:var(--text);
+        }
+        .history-actions button:hover { background:var(--primary-light); color:var(--primary-dark); }
+
+        /* ===== PARAMÈTRES ===== */
+        .settings-item {
+            display:flex; justify-content:space-between; align-items:center;
+            padding:12px 0; border-bottom:1px solid var(--border);
+        }
+        .settings-item:last-child { border-bottom:none; }
+        .settings-item .info { display:flex; flex-direction:column; gap:2px; }
+        .settings-item .info .title { font-weight:600; }
+        .settings-item .info .desc { font-size:0.8rem; color:var(--text-light); }
+        .settings-item button {
+            background:var(--primary-light); color:var(--primary-dark); border:none;
+            padding:6px 14px; border-radius:40px; font-weight:600; cursor:pointer; transition:var(--transition);
+        }
+        .settings-item button:hover { background:var(--primary); color:white; }
+        .settings-item select {
+            padding:6px 12px; border-radius:40px; border:1px solid var(--border);
+            background:var(--bg); color:var(--text); font-weight:600; cursor:pointer;
+        }
+        .toggle-switch {
+            width:48px; height:28px; background:var(--border); border-radius:40px;
+            position:relative; cursor:pointer; transition:background var(--transition); flex-shrink:0;
+        }
+        .toggle-switch.active { background:var(--primary); }
+        .toggle-switch .thumb {
+            width:22px; height:22px; background:white; border-radius:50%;
+            position:absolute; top:3px; left:3px; transition:transform var(--transition);
+            box-shadow:0 2px 4px rgba(0,0,0,0.2);
+        }
+        .toggle-switch.active .thumb { transform:translateX(20px); }
+
+        /* ===== NAVIGATION ===== */
+        .bottom-nav {
+            position:fixed; bottom:0; left:0; right:0;
+            background:var(--card); border-top:1px solid var(--border);
+            display:flex; justify-content:space-around; align-items:center;
+            height:var(--nav-height); padding:0 8px 8px;
+            box-shadow:0 -4px 20px rgba(0,0,0,0.05);
+            z-index:100; transition: background var(--transition), border var(--transition);
+        }
+        .bottom-nav .nav-item {
+            display:flex; flex-direction:column; align-items:center; justify-content:center;
+            gap:2px; padding:4px 8px; border:none; background:transparent;
+            color:var(--text-light); font-size:0.6rem; font-weight:600;
+            cursor:pointer; transition:color var(--transition); position:relative;
+            flex:1; max-width:70px;
+        }
+        .bottom-nav .nav-item i { font-size:1.5rem; transition:transform var(--transition); }
+        .bottom-nav .nav-item.active { color:var(--primary); }
+        .bottom-nav .nav-item.active i { transform:scale(1.1); }
+        .bottom-nav .nav-item .nav-badge {
+            position:absolute; top:0; right:0;
+            background:#EF4444; color:white; border-radius:50%;
+            padding:2px 6px; font-size:0.6rem; font-weight:700; min-width:18px; text-align:center;
+            transform:translate(50%, -30%); display:none;
+        }
+        .bottom-nav .nav-item .nav-badge.show { display:block; }
+
+        /* ===== TOAST ===== */
+        .toast-container {
+            position:fixed; bottom:calc(var(--nav-height) + 20px);
+            left:50%; transform:translateX(-50%); z-index:9999;
+            display:flex; flex-direction:column; align-items:center; gap:8px;
+            width:90%; max-width:400px; pointer-events:none;
+        }
+        .toast {
+            background:#1F2937; color:white; padding:12px 20px; border-radius:60px;
+            font-weight:500; font-size:0.9rem; box-shadow:0 10px 40px rgba(0,0,0,0.25);
+            display:flex; align-items:center; gap:10px;
+            animation:slideUp 0.4s ease forwards; pointer-events:auto; width:100%;
+        }
+        .toast.success { background:#059669; }
+        .toast.error { background:#DC2626; }
+        .toast.info { background:#2563EB; }
+        .toast i { font-size:1.1rem; }
+        @keyframes slideUp { from {opacity:0; transform:translateY(30px);} to {opacity:1; transform:translateY(0);} }
+        .toast.hide { animation:slideDown 0.3s ease forwards; }
+        @keyframes slideDown { to {opacity:0; transform:translateY(30px);} }
+
+        @media (max-width:480px) {
+            .app-container { padding:12px 12px 0; }
+            .page-header h1 { font-size:1.4rem; }
+            .controls-row button { padding:8px 14px; font-size:0.8rem; }
+            .result-box .value { font-size:0.9rem; }
+            .bottom-nav .nav-item { font-size:0.55rem; }
+            .bottom-nav .nav-item i { font-size:1.3rem; }
+        }
+    </style>
+</head>
+<body>
+
+<div class="app-container">
+    <!-- ===== VUE SCANNER ===== -->
+    <div id="view-scanner" class="view active">
+        <div class="page-header">
+            <h1><i class="fas fa-qrcode"></i> Scanner</h1>
+            <span class="badge">JETON-QR</span>
+        </div>
+        <div class="card">
+            <div class="video-wrapper">
+                <video id="video" playsinline></video>
+                <div class="scan-overlay">
+                    <div class="corner tl"></div><div class="corner tr"></div>
+                    <div class="corner bl"></div><div class="corner br"></div>
+                    <div class="scan-line"></div>
+                </div>
+            </div>
+            <div class="controls-row">
+                <button class="primary" id="startButton"><i class="fas fa-play"></i> Démarrer</button>
+                <button class="danger" id="stopButton" disabled><i class="fas fa-stop"></i> Arrêter</button>
+                <button onclick="toggleTorch()"><i class="fas fa-lightbulb"></i> Lampe</button>
+                <button class="success" onclick="scanFromGallery()"><i class="fas fa-image"></i> Galerie</button>
+            </div>
+            <div class="result-box">
+                <span class="label"><i class="fas fa-barcode"></i> Résultat :</span>
+                <span class="value" id="result">En attente...</span>
+                <span class="type-badge" id="typeBadge">—</span>
+                <div class="actions">
+                    <button onclick="copyResult()"><i class="fas fa-copy"></i> Copier</button>
+                    <button onclick="shareResult()"><i class="fas fa-share-alt"></i></button>
+                    <button onclick="saveJeton()"><i class="fas fa-save"></i> Enregistrer</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ===== VUE GÉNÉRATEUR ===== -->
+    <div id="view-generate" class="view">
+        <div class="page-header">
+            <h1><i class="fas fa-pen-fancy"></i> Générer</h1>
+            <span class="badge">QR Code</span>
+        </div>
+        <div class="card">
+            <div class="card-title"><i class="fas fa-edit"></i> Créer un QR code</div>
+            <div class="qr-input-group">
+                <textarea id="qrTextInput" placeholder="Saisissez le texte, URL ou toute donnée à encoder..."></textarea>
+                <button class="primary" onclick="generateQR()" style="align-self:center;padding:10px 30px;border:none;border-radius:50px;font-weight:700;background:var(--primary);color:white;cursor:pointer;">
+                    <i class="fas fa-sync-alt"></i> Générer
+                </button>
+            </div>
+            <div class="qr-preview" id="qrPreview" style="display:none;">
+                <div id="qrcode"></div>
+                <div class="qr-actions">
+                    <button onclick="downloadQR()"><i class="fas fa-download"></i> Télécharger PNG</button>
+                    <button onclick="saveJetonFromQR()"><i class="fas fa-save"></i> Enregistrer comme jeton</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ===== VUE JETONS ===== -->
+    <div id="view-jetons" class="view">
+        <div class="page-header">
+            <h1><i class="fas fa-database"></i> Jetons</h1>
+            <span class="badge" id="jetonCount">0</span>
+        </div>
+        <div class="card">
+            <div class="filter-bar">
+                <input type="text" id="jetonSearchInput" placeholder="🔍 Rechercher..." oninput="filterJetons()">
+                <select id="jetonTypeFilter" onchange="filterJetons()">
+                    <option value="">Tous types</option>
+                    <option value="iPhone">iPhone</option>
+                    <option value="Samsung">Samsung</option>
+                    <option value="Inconnu">Inconnu</option>
+                    <!-- ajoutez d'autres types si besoin -->
+                </select>
+            </div>
+            <div class="table-wrap">
+                <table>
+                    <thead><tr><th>N°</th><th>Appareil</th><th>Nom</th><th style="text-align:center;">Actions</th></tr></thead>
+                    <tbody id="jetonTableBody"><tr class="empty-row"><td colspan="4">Aucun jeton</td></tr></tbody>
+                </table>
+            </div>
+            <div style="display:flex; gap:8px; margin-top:12px; flex-wrap:wrap;">
+                <button onclick="exportPDF('jetons')" style="background:var(--primary);color:white;border:none;padding:8px 16px;border-radius:40px;font-weight:600;cursor:pointer;"><i class="fas fa-file-pdf"></i> Export PDF</button>
+                <button onclick="clearAllJetons()" style="background:#EF4444;color:white;border:none;padding:8px 16px;border-radius:40px;font-weight:600;cursor:pointer;"><i class="fas fa-trash-alt"></i> Tout supprimer</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ===== VUE HISTORIQUE ===== -->
+    <div id="view-history" class="view">
+        <div class="page-header">
+            <h1><i class="fas fa-history"></i> Historique</h1>
+            <span class="badge" id="historyCount">0</span>
+        </div>
+        <div class="card">
+            <div class="history-search">
+                <input type="text" id="historySearchInput" placeholder="🔍 Rechercher..." oninput="filterHistory()">
+            </div>
+            <div class="history-list" id="historyList"><div class="history-empty">Aucun scan</div></div>
+            <div class="history-actions">
+                <button onclick="exportHistoryCSV()"><i class="fas fa-file-csv"></i> CSV</button>
+                <button onclick="exportPDF('history')"><i class="fas fa-file-pdf"></i> PDF</button>
+                <button onclick="clearHistory()"><i class="fas fa-eraser"></i> Effacer</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ===== VUE PARAMÈTRES ===== -->
+    <div id="view-settings" class="view">
+        <div class="page-header">
+            <h1><i class="fas fa-cog"></i> Paramètres</h1>
+        </div>
+        <div class="card">
+            <div class="settings-item">
+                <div class="info"><span class="title">Thème sombre</span><span class="desc">Activer le mode nuit</span></div>
+                <div class="toggle-switch" id="themeToggle" onclick="toggleTheme()"><div class="thumb"></div></div>
+            </div>
+            <div class="settings-item">
+                <div class="info"><span class="title">Couleur d'accent</span><span class="desc">Changer la couleur principale</span></div>
+                <select id="accentSelect" onchange="changeAccent(this.value)">
+                    <option value="purple">Violet</option>
+                    <option value="blue">Bleu</option>
+                    <option value="green">Vert</option>
+                    <option value="red">Rouge</option>
+                    <option value="orange">Orange</option>
+                </select>
+            </div>
+            <div class="settings-item">
+                <div class="info"><span class="title">Exporter les données</span><span class="desc">Sauvegarder tout (jetons + historique)</span></div>
+                <button onclick="exportJSON()"><i class="fas fa-file-export"></i> Exporter</button>
+            </div>
+            <div class="settings-item">
+                <div class="info"><span class="title">Importer des données</span><span class="desc">Restaurer à partir d'un fichier JSON</span></div>
+                <button onclick="importJSON()"><i class="fas fa-file-import"></i> Importer</button>
+            </div>
+            <div class="settings-item">
+                <div class="info"><span class="title">Réinitialiser tout</span><span class="desc">Supprimer toutes les données</span></div>
+                <button onclick="resetAll()" style="background:#EF4444;color:white;">Réinitialiser</button>
+            </div>
+            <div class="settings-item">
+                <div class="info"><span class="title">À propos</span><span class="desc">JETON-QR Pro+ v3.0</span></div>
+                <button onclick="toast('JETON-QR App - Version 3.0 avec générateur et PDF','info')">Info</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ===== NAVIGATION ===== -->
+<nav class="bottom-nav" id="bottomNav">
+    <button class="nav-item active" data-view="view-scanner"><i class="fas fa-qrcode"></i><span>Scanner</span></button>
+    <button class="nav-item" data-view="view-generate"><i class="fas fa-pen-fancy"></i><span>Générer</span></button>
+    <button class="nav-item" data-view="view-jetons"><i class="fas fa-database"></i><span>Jetons</span><span class="nav-badge" id="navJetonBadge">0</span></button>
+    <button class="nav-item" data-view="view-history"><i class="fas fa-history"></i><span>Historique</span><span class="nav-badge" id="navHistoryBadge">0</span></button>
+    <button class="nav-item" data-view="view-settings"><i class="fas fa-cog"></i><span>Paramètres</span></button>
+</nav>
+
+<!-- ===== TOAST ===== -->
+<div class="toast-container" id="toastContainer"></div>
+
+<!-- Librairies -->
+<script src="vendor/jsQR.js"></script>
+<script>
+    // ================================================================
+    //  ÉTAT
+    // ================================================================
+    const video = document.getElementById('video');
+    const startBtn = document.getElementById('startButton');
+    const stopBtn = document.getElementById('stopButton');
+    const resultEl = document.getElementById('result');
+    const typeBadge = document.getElementById('typeBadge');
+    const jetonTableBody = document.getElementById('jetonTableBody');
+    const historyList = document.getElementById('historyList');
+    const historyCount = document.getElementById('historyCount');
+    const historySearchInput = document.getElementById('historySearchInput');
+    const jetonCount = document.getElementById('jetonCount');
+    const navJetonBadge = document.getElementById('navJetonBadge');
+    const navHistoryBadge = document.getElementById('navHistoryBadge');
+    const themeToggle = document.getElementById('themeToggle');
+
+    let stream = null;
+    let scanningInterval = null;
+    let lastScannedData = null;
+    let isTorchOn = false;
+    let currentTheme = 'light';
+    let currentAccent = 'purple';
+    let jetons = [];
+    let history = [];
+    let filteredHistory = [];
+    let qrCodeInstance = null;
+    let lastGeneratedText = '';
+
+    // ================================================================
+    //  CHARGEMENT / SAUVEGARDE
+    // ================================================================
+    function loadData() {
+        try {
+            const j = localStorage.getItem('jetons');
+            if (j) jetons = JSON.parse(j);
+            const h = localStorage.getItem('history');
+            if (h) history = JSON.parse(h);
+            const theme = localStorage.getItem('theme');
+            if (theme) currentTheme = theme;
+            const accent = localStorage.getItem('accent');
+            if (accent) currentAccent = accent;
+        } catch (e) {}
+        applyTheme();
+        applyAccent();
+    }
+
+    function saveData() {
+        localStorage.setItem('jetons', JSON.stringify(jetons));
+        localStorage.setItem('history', JSON.stringify(history));
+        localStorage.setItem('theme', currentTheme);
+        localStorage.setItem('accent', currentAccent);
+        updateBadges();
+    }
+
+    // ================================================================
+    //  THÈME / ACCENT
+    // ================================================================
+    function toggleTheme() {
+        currentTheme = (currentTheme === 'light') ? 'dark' : 'light';
+        applyTheme();
+        saveData();
+        toast('Thème ' + (currentTheme === 'dark' ? 'sombre' : 'clair'), 'info');
+    }
+
+    function applyTheme() {
+        document.documentElement.setAttribute('data-theme', currentTheme);
+        if (themeToggle) themeToggle.classList.toggle('active', currentTheme === 'dark');
+    }
+
+    function changeAccent(val) {
+        currentAccent = val;
+        applyAccent();
+        saveData();
+        toast('Couleur changée', 'success');
+    }
+
+    function applyAccent() {
+        document.documentElement.setAttribute('data-accent', currentAccent);
+        const select = document.getElementById('accentSelect');
+        if (select) select.value = currentAccent;
+    }
+
+    // ================================================================
+    //  JETONS
+    // ================================================================
+    function addJeton(id, type, nom) {
+        if (jetons.some(j => j.id === id)) {
+            toast('Ce jeton existe déjà', 'info');
+            return false;
+        }
+        const numero = jetons.length + 1;
+        jetons.push({ numero, id, type, nom });
+        saveData();
+        renderJetons();
+        toast('Jeton enregistré ✅', 'success');
+        return true;
+    }
+
+    function deleteJeton(id) {
+        if (!confirm('Supprimer ce jeton ?')) return;
+        jetons = jetons.filter(j => j.id !== id);
+        jetons.forEach((j, idx) => j.numero = idx + 1);
+        saveData();
+        renderJetons();
+        toast('Jeton supprimé', 'info');
+    }
+
+    function editJeton(id) {
+        const jeton = jetons.find(j => j.id === id);
+        if (!jeton) return;
+        const newType = prompt('Type d\'appareil :', jeton.type) || jeton.type;
+        const newNom = prompt('Nom :', jeton.nom) || jeton.nom;
+        if (newType !== jeton.type || newNom !== jeton.nom) {
+            jeton.type = newType;
+            jeton.nom = newNom;
+            saveData();
+            renderJetons();
+            toast('Jeton modifié', 'success');
+        }
+    }
+
+    function filterJetons() {
+        const search = document.getElementById('jetonSearchInput').value.toLowerCase().trim();
+        const typeFilter = document.getElementById('jetonTypeFilter').value;
+        let filtered = jetons;
+        if (search) filtered = filtered.filter(j => j.id.toLowerCase().includes(search) || (j.nom && j.nom.toLowerCase().includes(search)));
+        if (typeFilter) filtered = filtered.filter(j => j.type === typeFilter);
+        renderJetons(filtered);
+    }
+
+    function renderJetons(list = null) {
+        const data = list || jetons;
+        if (data.length === 0) {
+            jetonTableBody.innerHTML = `<tr class="empty-row"><td colspan="4">Aucun jeton</td></tr>`;
+            jetonCount.textContent = jetons.length;
+            return;
+        }
+        let html = '';
+        data.forEach(j => {
+            html += `
+                <tr>
+                    <td>${j.numero}</td>
+                    <td>${j.type || '—'}</td>
+                    <td>${j.nom || '—'}</td>
+                    <td style="text-align:center;">
+                        <div class="table-actions">
+                            <button onclick="editJeton('${j.id}')" title="Modifier"><i class="fas fa-edit"></i></button>
+                            <button class="del" onclick="deleteJeton('${j.id}')" title="Supprimer"><i class="fas fa-trash-alt"></i></button>
+                        </div>
+                    </td>
+                </tr>
+            `;
+        });
+        jetonTableBody.innerHTML = html;
+        jetonCount.textContent = jetons.length;
+        updateBadges();
+    }
+
+    function clearAllJetons() {
+        if (jetons.length === 0) return;
+        if (confirm('Supprimer tous les jetons ?')) {
+            jetons = [];
+            saveData();
+            renderJetons();
+            toast('Tous les jetons supprimés', 'info');
+        }
+    }
+
+    // ================================================================
+    //  HISTORIQUE
+    // ================================================================
+    function detectType(data) {
+        if (/^https?:\/\//i.test(data)) return 'URL';
+        if (/^[\w\.-]+@[\w\.-]+\.\w+$/.test(data)) return 'EMAIL';
+        if (/^(\+?\d{1,3}[- ]?)?\(?\d{2,4}\)?[- ]?\d{3,4}[- ]?\d{4}$/.test(data)) return 'TÉLÉPHONE';
+        if (/^-?\d+\.?\d*,\s*-?\d+\.?\d*$/.test(data)) return 'COORD';
+        if (/^wifi:/i.test(data)) return 'WIFI';
+        if (/^BEGIN:VCARD/i.test(data)) return 'VCARD';
+        return 'TEXTE';
+    }
+
+    function addHistory(data) {
+        const entry = {
+            data: data,
+            timestamp: new Date().toLocaleString(),
+            date: new Date().getTime(),
+            type: detectType(data)
+        };
+        history.unshift(entry);
+        if (history.length > 300) history.pop();
+        saveData();
+        renderHistory();
+        playFeedback();
+    }
+
+    function playFeedback() {
+        try {
+            const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+            osc.connect(gain); gain.connect(audioCtx.destination);
+            osc.frequency.value = 1200; osc.type = 'sine';
+            gain.gain.setValueAtTime(0.1, audioCtx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.1);
+            osc.start(); osc.stop(audioCtx.currentTime + 0.1);
+        } catch (e) {}
+        if (navigator.vibrate) navigator.vibrate(50);
+    }
+
+    function renderHistory(filter = '') {
+        const search = filter.toLowerCase().trim();
+        filteredHistory = search ? history.filter(item => item.data.toLowerCase().includes(search)) : history;
+        if (filteredHistory.length === 0) {
+            historyList.innerHTML = `<div class="history-empty">${search ? 'Aucun résultat' : 'Aucun scan'}</div>`;
+            historyCount.textContent = history.length;
+            return;
+        }
+        let html = '';
+        filteredHistory.forEach((item, idx) => {
+            const realIndex = history.indexOf(item);
+            html += `
+                <div class="history-item">
+                    <div class="content">
+                        <div class="data">${item.data}</div>
+                        <div class="meta">
+                            <span><i class="far fa-clock"></i> ${item.timestamp}</span>
+                            <span class="type-tag">${item.type || 'TEXTE'}</span>
+                        </div>
+                    </div>
+                    <button class="delete-btn" onclick="deleteHistoryItem(${realIndex})"><i class="fas fa-times"></i></button>
+                </div>
+            `;
+        });
+        historyList.innerHTML = html;
+        historyCount.textContent = history.length;
+        updateBadges();
+    }
+
+    function filterHistory() { renderHistory(historySearchInput.value); }
+
+    function deleteHistoryItem(index) {
+        history.splice(index, 1);
+        saveData();
+        renderHistory(historySearchInput.value);
+        toast('Élément supprimé', 'info');
+    }
+
+    function clearHistory() {
+        if (history.length === 0) return;
+        if (confirm('Effacer tout l\'historique ?')) {
+            history = [];
+            saveData();
+            renderHistory();
+            toast('Historique effacé', 'info');
+        }
+    }
+
+    function exportHistoryCSV() {
+        if (history.length === 0) { toast('Aucune donnée', 'error'); return; }
+        let csv = 'Donnée,Type,Date\n';
+        history.forEach(item => {
+            csv += `"${item.data}","${item.type || 'TEXTE'}","${item.timestamp}"\n`;
+        });
+        downloadFile(csv, 'historique_scans.csv', 'text/csv');
+        toast('CSV exporté', 'success');
+    }
+
+    // ================================================================
+    //  EXPORT PDF (Jetons ou Historique)
+    // ================================================================
+    function exportPDF(type) {
+        let content = '';
+        if (type === 'jetons') {
+            if (jetons.length === 0) { toast('Aucun jeton à exporter', 'error'); return; }
+            content = `
+                <h2 style="text-align:center;color:var(--primary);">Liste des jetons</h2>
+                <table style="width:100%;border-collapse:collapse;margin-top:16px;">
+                    <tr style="background:#f0f0f0;"><th style="border:1px solid #ccc;padding:8px;">N°</th><th style="border:1px solid #ccc;padding:8px;">Appareil</th><th style="border:1px solid #ccc;padding:8px;">Nom</th><th style="border:1px solid #ccc;padding:8px;">ID</th></tr>
+                    ${jetons.map(j => `<tr><td style="border:1px solid #ccc;padding:8px;">${j.numero}</td><td style="border:1px solid #ccc;padding:8px;">${j.type||'—'}</td><td style="border:1px solid #ccc;padding:8px;">${j.nom||'—'}</td><td style="border:1px solid #ccc;padding:8px;">${j.id}</td></tr>`).join('')}
+                </table>
+                <p style="margin-top:20px;text-align:center;color:#888;">Exporté le ${new Date().toLocaleString()}</p>
+            `;
+        } else { // history
+            if (history.length === 0) { toast('Aucun historique', 'error'); return; }
+            content = `
+                <h2 style="text-align:center;color:var(--primary);">Historique des scans</h2>
+                <table style="width:100%;border-collapse:collapse;margin-top:16px;">
+                    <tr style="background:#f0f0f0;"><th style="border:1px solid #ccc;padding:8px;">Donnée</th><th style="border:1px solid #ccc;padding:8px;">Type</th><th style="border:1px solid #ccc;padding:8px;">Date</th></tr>
+                    ${history.map(item => `<tr><td style="border:1px solid #ccc;padding:8px;">${item.data}</td><td style="border:1px solid #ccc;padding:8px;">${item.type||'TEXTE'}</td><td style="border:1px solid #ccc;padding:8px;">${item.timestamp}</td></tr>`).join('')}
+                </table>
+                <p style="margin-top:20px;text-align:center;color:#888;">Exporté le ${new Date().toLocaleString()}</p>
+            `;
+        }
+        // Créer un élément temporaire pour le PDF
+        const wrapper = document.createElement('div');
+        wrapper.style.padding = '20px';
+        wrapper.style.fontFamily = 'Segoe UI, sans-serif';
+        wrapper.innerHTML = content;
+        document.body.appendChild(wrapper);
+        html2pdf().set({ margin: 10, filename: type === 'jetons' ? 'jetons.pdf' : 'historique.pdf', image: { type: 'jpeg', quality: 0.98 }, html2canvas: { scale: 2, useCORS: true }, jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' } }).from(wrapper).save().then(() => {
+            document.body.removeChild(wrapper);
+            toast('PDF exporté', 'success');
+        }).catch(() => {
+            document.body.removeChild(wrapper);
+            toast('Erreur PDF', 'error');
+        });
+    }
+
+    // ================================================================
+    //  EXPORT / IMPORT JSON
+    // ================================================================
+    function exportJSON() {
+        const data = { jetons, history };
+        const json = JSON.stringify(data, null, 2);
+        downloadFile(json, 'jeton_qr_data.json', 'application/json');
+        toast('Données exportées', 'success');
+    }
+
+    function importJSON() {
+        const input = document.createElement('input');
+        input.type = 'file';
+        input.accept = '.json';
+        input.onchange = function(e) {
+            const file = e.target.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = function(ev) {
+                try {
+                    const data = JSON.parse(ev.target.result);
+                    if (data.jetons) jetons = data.jetons;
+                    if (data.history) history = data.history;
+                    saveData();
+                    renderJetons();
+                    renderHistory();
+                    toast('Import réussi', 'success');
+                } catch (err) {
+                    toast('Fichier invalide', 'error');
+                }
+            };
+            reader.readAsText(file);
+        };
+        input.click();
+    }
+
+    function resetAll() {
+        if (!confirm('Toutes les données seront définitivement supprimées. Continuer ?')) return;
+        jetons = [];
+        history = [];
+        saveData();
+        renderJetons();
+        renderHistory();
+        toast('Données réinitialisées', 'info');
+    }
+
+    function downloadFile(content, filename, mime) {
+        const blob = new Blob([content], { type: mime });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url; a.download = filename; a.click();
+        URL.revokeObjectURL(url);
+    }
+
+    // ================================================================
+    //  BADGES
+    // ================================================================
+    function updateBadges() {
+        const showBadge = (el, count) => {
+            if (count > 0) { el.textContent = count; el.classList.add('show'); }
+            else el.classList.remove('show');
+        };
+        showBadge(navJetonBadge, jetons.length);
+        showBadge(navHistoryBadge, history.length);
+    }
+
+    // ================================================================
+    //  SCANNER
+    // ================================================================
+    async function startScanner() {
+        try {
+            stream = await navigator.mediaDevices.getUserMedia({
+                video: { facingMode: 'environment', width: { ideal: 640 }, height: { ideal: 480 } }
+            });
+            video.srcObject = stream;
+            video.setAttribute('playsinline', true);
+            await video.play();
+            startBtn.disabled = true;
+            stopBtn.disabled = false;
+            startScanning();
+            toast('Caméra activée', 'success');
+        } catch (err) {
+            toast('Erreur caméra : ' + err.message, 'error');
+        }
+    }
+
+    function stopScanner() {
+        stopScanning();
+        if (stream) {
+            stream.getTracks().forEach(t => t.stop());
+            video.srcObject = null;
+        }
+        startBtn.disabled = false;
+        stopBtn.disabled = true;
+        if (isTorchOn) toggleTorch();
+        toast('Caméra arrêtée', 'info');
+    }
+
+    function startScanning() {
+        if (scanningInterval) clearInterval(scanningInterval);
+        scanningInterval = setInterval(() => {
+            if (video.readyState === video.HAVE_ENOUGH_DATA) {
+                const canvas = document.createElement('canvas');
+                canvas.width = video.videoWidth;
+                canvas.height = video.videoHeight;
+                const ctx = canvas.getContext('2d');
+                ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+                const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+                const code = jsQR(imageData.data, imageData.width, imageData.height, {
+                    inversionAttempts: "dontInvert",
+                });
+                if (code && code.data) {
+                    const data = code.data.trim();
+                    if (data !== lastScannedData) {
+                        lastScannedData = data;
+                        resultEl.textContent = data;
+                        typeBadge.textContent = detectType(data);
+                        addHistory(data);
+                        if (jetons.some(j => j.id === data)) {
+                            toast('Jeton reconnu', 'success');
+                        } else {
+                            toast('Nouveau code scanné', 'info');
+                        }
+                    }
+                }
+            }
+        }, 300);
+    }
+
+    function stopScanning() {
+        if (scanningInterval) {
+            clearInterval(scanningInterval);
+            scanningInterval = null;
+        }
+    }
+
+    // ================================================================
+    //  GALERIE
+    // ================================================================
+    function scanFromGallery() {
+        const input = document.createElement('input');
+        input.type = 'file';
+        input.accept = 'image/*';
+        input.onchange = function(e) {
+            const file = e.target.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = function(ev) {
+                const img = new Image();
+                img.onload = function() {
+                    const canvas = document.createElement('canvas');
+                    canvas.width = img.width;
+                    canvas.height = img.height;
+                    const ctx = canvas.getContext('2d');
+                    ctx.drawImage(img, 0, 0);
+                    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+                    const code = jsQR(imageData.data, imageData.width, imageData.height);
+                    if (code && code.data) {
+                        const data = code.data.trim();
+                        resultEl.textContent = data;
+                        typeBadge.textContent = detectType(data);
+                        addHistory(data);
+                        toast('Scan depuis image réussi', 'success');
+                    } else {
+                        toast('Aucun QR code trouvé', 'error');
+                    }
+                };
+                img.src = ev.target.result;
+            };
+            reader.readAsDataURL(file);
+        };
+        input.click();
+    }
+
+    // ================================================================
+    //  LAMPE
+    // ================================================================
+    async function toggleTorch() {
+        if (!stream) {
+            toast('Activez d\'abord la caméra', 'error');
+            return;
+        }
+        const track = stream.getVideoTracks()[0];
+        if (!track) return;
+        try {
+            const capabilities = track.getCapabilities();
+            if (!capabilities.torch) {
+                toast('Lampe non disponible', 'error');
+                return;
+            }
+            isTorchOn = !isTorchOn;
+            await track.applyConstraints({ advanced: [{ torch: isTorchOn }] });
+            toast(isTorchOn ? 'Lampe allumée' : 'Lampe éteinte', 'info');
+        } catch (e) {
+            toast('Erreur lampe', 'error');
+        }
+    }
+
+    // ================================================================
+    //  ACTIONS RÉSULTAT
+    // ================================================================
+    function copyResult() {
+        const text = resultEl.textContent;
+        if (!text || text === 'En attente...') {
+            toast('Rien à copier', 'error');
+            return;
+        }
+        navigator.clipboard.writeText(text).then(() => toast('Copié !', 'success'))
+            .catch(() => {
+                const ta = document.createElement('textarea');
+                ta.value = text;
+                document.body.appendChild(ta);
+                ta.select();
+                document.execCommand('copy');
+                ta.remove();
+                toast('Copié !', 'success');
+            });
+    }
+
+    function shareResult() {
+        const text = resultEl.textContent;
+        if (!text || text === 'En attente...') {
+            toast('Rien à partager', 'error');
+            return;
+        }
+        if (navigator.share) {
+            navigator.share({ title: 'JETON-QR', text: text }).catch(() => {});
+        } else {
+            toast('Partage non supporté', 'info');
+        }
+    }
+
+    function saveJeton() {
+        const data = resultEl.textContent;
+        if (!data || data === 'En attente...') {
+            toast('Aucun code à enregistrer', 'error');
+            return;
+        }
+        if (jetons.some(j => j.id === data)) {
+            toast('Ce jeton existe déjà', 'info');
+            return;
+        }
+        const type = prompt('Type d\'appareil :', 'Inconnu') || 'Inconnu';
+        const nom = prompt('Nom :', 'Anonyme') || 'Anonyme';
+        addJeton(data, type, nom);
+    }
+
+    // ================================================================
+    //  GÉNÉRATEUR QR
+    // ================================================================
+    function generateQR() {
+        const text = document.getElementById('qrTextInput').value.trim();
+        if (!text) {
+            toast('Veuillez saisir du texte', 'error');
+            return;
+        }
+        lastGeneratedText = text;
+        const container = document.getElementById('qrcode');
+        container.innerHTML = '';
+        qrCodeInstance = new QRCode(container, {
+            text: text,
+            width: 200,
+            height: 200,
+            colorDark: '#000000',
+            colorLight: '#ffffff',
+            correctLevel: QRCode.CorrectLevel.H
+        });
+        document.getElementById('qrPreview').style.display = 'flex';
+        toast('QR code généré', 'success');
+    }
+
+    function downloadQR() {
+        if (!qrCodeInstance) {
+            toast('Générez d\'abord un QR code', 'error');
+            return;
+        }
+        const canvas = document.querySelector('#qrcode canvas');
+        if (!canvas) { toast('Erreur', 'error'); return; }
+        const link = document.createElement('a');
+        link.download = 'qr_code.png';
+        link.href = canvas.toDataURL('image/png');
+        link.click();
+        toast('Image téléchargée', 'success');
+    }
+
+    function saveJetonFromQR() {
+        const text = lastGeneratedText;
+        if (!text) {
+            toast('Générez d\'abord un QR code', 'error');
+            return;
+        }
+        if (jetons.some(j => j.id === text)) {
+            toast('Ce jeton existe déjà', 'info');
+            return;
+        }
+        const type = prompt('Type d\'appareil :', 'Inconnu') || 'Inconnu';
+        const nom = prompt('Nom :', 'Anonyme') || 'Anonyme';
+        addJeton(text, type, nom);
+    }
+
+    // ================================================================
+    //  NAVIGATION
+    // ================================================================
+    function switchView(viewId) {
+        document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+        document.getElementById(viewId).classList.add('active');
+        document.querySelectorAll('.bottom-nav .nav-item').forEach(item => {
+            item.classList.toggle('active', item.dataset.view === viewId);
+        });
+    }
+
+    document.querySelectorAll('.bottom-nav .nav-item').forEach(item => {
+        item.addEventListener('click', function() {
+            switchView(this.dataset.view);
+        });
+    });
+
+    // ================================================================
+    //  TOAST
+    // ================================================================
+    function toast(message, type = 'info') {
+        const container = document.getElementById('toastContainer');
+        const el = document.createElement('div');
+        el.className = `toast ${type}`;
+        const icons = { success: 'fa-check-circle', error: 'fa-exclamation-circle', info: 'fa-info-circle' };
+        el.innerHTML = `<i class="fas ${icons[type] || 'fa-info-circle'}"></i> ${message}`;
+        container.appendChild(el);
+        setTimeout(() => {
+            el.classList.add('hide');
+            setTimeout(() => el.remove(), 300);
+        }, 2800);
+    }
+
+    // ================================================================
+    //  INIT
+    // ================================================================
+    loadData();
+    renderJetons();
+    renderHistory();
+    applyTheme();
+    applyAccent();
+
+    startBtn.addEventListener('click', startScanner);
+    stopBtn.addEventListener('click', stopScanner);
+    stopBtn.disabled = true;
+
+    document.addEventListener('visibilitychange', () => {
+        if (document.hidden && stream) stopScanner();
+    });
+
+    console.log('📱 JETON-QR Pro+ chargée');
+</script>
+</body>
+</html>
