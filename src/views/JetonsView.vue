@@ -2,7 +2,7 @@
   <div class="view">
     <div class="page-header">
       <h1><i class="fas fa-database"></i> Jetons</h1>
-      <span class="badge">{{ outsCount }} chez client</span>
+      <span class="badge">{{ availableCount }} · {{ outsCount }} sortis</span>
     </div>
     <div class="card">
       <div class="filter-bar">
@@ -42,6 +42,7 @@
               </td>
               <td style="text-align:center;">
                 <div class="table-actions">
+                  <button v-if="j.status === 'sorti'" class="ret" @click="rentrerUn(j)" title="Rentrer le jeton"><i class="fas fa-sign-in-alt"></i></button>
                   <button @click="editJeton(j)" title="Modifier"><i class="fas fa-edit"></i></button>
                   <button class="del" @click="deleteJeton(j.id)" title="Supprimer"><i class="fas fa-trash-alt"></i></button>
                 </div>
@@ -57,6 +58,7 @@
         <button class="action-btn primary" @click="generateJetonsFromPrompt"><i class="fas fa-wand-magic-sparkles"></i> Générer jetons</button>
         <button class="action-btn primary" :disabled="selectedJetons.length === 0" @click="printSelected"><i class="fas fa-print"></i> Imprimer ({{ selectedJetons.length }})</button>
         <button class="action-btn primary" @click="exportPDF('jetons')"><i class="fas fa-file-pdf"></i> Export PDF</button>
+        <button v-if="outsCount > 0" class="action-btn ok" @click="rentrerTous"><i class="fas fa-sign-in-alt"></i> Rentrer tout ({{ outsCount }})</button>
         <button class="action-btn danger" @click="clearAllJetons()"><i class="fas fa-trash-alt"></i> Tout supprimer</button>
       </div>
     </div>
@@ -68,8 +70,9 @@ import { ref, computed } from 'vue'
 import { useJetonStore } from '../composables/useJetonStore'
 import { useToast } from '../composables/useToast'
 import { useExport } from '../composables/useExport'
+import { formatDuration } from '../utils'
 
-const { jetons, deleteJeton, updateJeton, clearAllJetons, generateJetons } = useJetonStore()
+const { jetons, deleteJeton, updateJeton, clearAllJetons, generateJetons, rentrerJeton, rentrerTousJetons } = useJetonStore()
 const toast = useToast()
 const { exportPDF, printJetons } = useExport()
 
@@ -113,6 +116,7 @@ const selectedJetons = computed(() => jetons.value.filter(j => selectedIds.value
 const allSelected = computed(() => filtered.value.length > 0 && selectedIds.value.size === filtered.value.length)
 
 const outsCount = computed(() => jetons.value.filter(j => j.status === 'sorti').length)
+const availableCount = computed(() => jetons.value.filter(j => j.status !== 'sorti').length)
 
 function statusOf(j) {
   return j.status === 'sorti' ? 'sorti' : 'disponible'
@@ -154,5 +158,17 @@ function editJeton(j) {
   if (newType !== j.type || newNom !== j.nom) {
     updateJeton(j.id, newType, newNom)
   }
+}
+
+function rentrerUn(j) {
+  const ret = rentrerJeton(j.id)
+  if (ret) {
+    const duree = formatDuration(ret.duree)
+    toast.success(duree ? `Jeton N° ${j.numero} rentré (durée : ${duree})` : `Jeton N° ${j.numero} rentré`)
+  }
+}
+
+function rentrerTous() {
+  rentrerTousJetons()
 }
 </script>

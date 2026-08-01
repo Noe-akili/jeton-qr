@@ -43,7 +43,7 @@ import { ref, computed, onUnmounted } from 'vue'
 import jsQR from 'jsqr'
 import { useJetonStore } from '../composables/useJetonStore'
 import { useToast } from '../composables/useToast'
-import { detectType } from '../utils'
+import { detectType, formatDuration } from '../utils'
 
 const videoEl = ref(null)
 const result = ref('')
@@ -128,17 +128,6 @@ async function handleCode(raw) {
   resultBadge.value = 'SORTIE'
   resultClass.value = 'warn'
   toast.success('Jeton remis au client — appareil déposé')
-}
-
-function formatDuration(ms) {
-  if (!ms || ms < 0) return ''
-  const sec = Math.floor(ms / 1000)
-  const h = Math.floor(sec / 3600)
-  const m = Math.floor((sec % 3600) / 60)
-  const s = sec % 60
-  if (h > 0) return `${h}h ${m}min`
-  if (m > 0) return `${m}min ${s}s`
-  return `${s}s`
 }
 
 async function startScanner() {

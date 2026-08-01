@@ -159,9 +159,36 @@ function rentrerJeton(id) {
   return { duree }
 }
 
+function rentrerTousJetons() {
+  const toast = useToast()
+  const sortis = jetons.value.filter(j => j.status === 'sorti')
+  if (sortis.length === 0) {
+    toast.info('Aucun jeton chez un client')
+    return 0
+  }
+  if (!confirm(`Rentrer les ${sortis.length} jeton(s) actuellement chez les clients ?`)) return 0
+  const now = Date.now()
+  sortis.forEach(j => {
+    j.entreeAt = now
+    j.status = 'disponible'
+    pushMouvement(j.id, 'entree', j.clientNom)
+    j.clientNom = ''
+  })
+  save()
+  playFeedback()
+  toast.success(`${sortis.length} jeton(s) rentré(s)`)
+  return sortis.length
+}
+
 function deleteJeton(id) {
   const toast = useToast()
-  if (!confirm('Supprimer ce jeton ?')) return
+  const jeton = jetons.value.find(j => j.id === id)
+  if (!jeton) return
+  if (jeton.status === 'sorti') {
+    toast.error('Jeton actuellement chez un client — rentrez-le d\'abord')
+    return
+  }
+  if (!confirm(`Supprimer le jeton N° ${jeton.numero} ?`)) return
   jetons.value = jetons.value.filter(j => j.id !== id)
   jetons.value.forEach((j, idx) => { j.numero = idx + 1 })
   save()
@@ -230,6 +257,7 @@ export function useJetonStore() {
     generateJetons,
     sortirJeton,
     rentrerJeton,
+    rentrerTousJetons,
     deleteJeton,
     clearAllJetons,
     addHistory,

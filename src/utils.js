@@ -34,3 +34,14 @@ export function downloadFile(content, filename, mime) {
   a.click()
   URL.revokeObjectURL(url)
 }
+
+export function formatDuration(ms) {
+  if (!ms || ms < 0) return ''
+  const sec = Math.floor(ms / 1000)
+  const h = Math.floor(sec / 3600)
+  const m = Math.floor((sec % 3600) / 60)
+  const s = sec % 60
+  if (h > 0) return `${h}h ${m}min`
+  if (m > 0) return `${m}min ${s}s`
+  return `${s}s`
+}
