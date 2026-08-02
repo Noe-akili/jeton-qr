@@ -1,22 +1,39 @@
 import { ref } from 'vue'
 import { useToast } from './useToast'
 import { detectType, playFeedback } from '../utils'
+import { storageGet, storageSet } from './useStorage'
+import { deviceName } from './useConfig'
+import { emit, on } from './useBus'
 
 const jetons = ref([])
 const history = ref([])
 
 let saveTimer = null
+let loaded = false
+const pendingRemoteEvents = []
 
-function load() {
+function eventId() {
+  return Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 8)
+}
+
+async function load() {
   try {
-    const j = localStorage.getItem('jetons')
+    const [j, h] = await Promise.all([storageGet('jetons'), storageGet('history')])
     if (j) {
       jetons.value = JSON.parse(j)
       migrate(jetons.value)
     }
-    const h = localStorage.getItem('history')
-    if (h) history.value = JSON.parse(h)
+    if (h) {
+      history.value = JSON.parse(h)
+      migrateHistory(history.value)
+    }
   } catch (e) {}
+  loaded = true
+  if (pendingRemoteEvents.length) {
+    const list = pendingRemoteEvents.splice(0)
+    mergeRemoteEvents(list)
+  }
+  emit('storeLoaded')
 }
 
 function migrate(list) {
@@ -27,15 +44,29 @@ function migrate(list) {
     if (!('sortieAt' in j)) { j.sortieAt = null; changed = true }
     if (!('entreeAt' in j)) { j.entreeAt = null; changed = true }
     if (!('sortieCount' in j)) { j.sortieCount = 0; changed = true }
+    if (!('updatedAt' in j)) { j.updatedAt = j.sortieAt || j.entreeAt || Date.now(); changed = true }
   })
   if (changed) save()
 }
 
-function write() {
+function migrateHistory(list) {
+  let changed = false
+  list.forEach(h => {
+    if (!('eventId' in h)) { h.eventId = eventId(); changed = true }
+    if (!('device' in h)) { h.device = h.device || h.remote ? (h.remote || '') : ''; changed = true }
+    if (!('date' in h)) { h.date = Date.now(); changed = true }
+  })
+  if (changed) save()
+}
+
+async function write() {
   try {
-    localStorage.setItem('jetons', JSON.stringify(jetons.value))
-    localStorage.setItem('history', JSON.stringify(history.value))
+    await Promise.all([
+      storageSet('jetons', JSON.stringify(jetons.value)),
+      storageSet('history', JSON.stringify(history.value)),
+    ])
   } catch (e) {}
+  emit('localState', { jetons: jetons.value.slice(), history: history.value.slice() })
 }
 
 function save() {
@@ -63,12 +94,14 @@ function newJeton(numero, id, type, nom) {
     sortieAt: null,
     entreeAt: null,
     sortieCount: 0,
+    updatedAt: Date.now(),
   }
 }
 
 function pushMouvement(jetonId, mouvement, clientNom) {
   const jeton = jetons.value.find(j => j.id === jetonId)
-  history.value.unshift({
+  const item = {
+    eventId: eventId(),
     data: jetonId,
     label: jeton ? `JETON N° ${jeton.numero}` : jetonId,
     jetonId,
@@ -77,8 +110,12 @@ function pushMouvement(jetonId, mouvement, clientNom) {
     type: jeton ? (jeton.type || 'JETON') : detectType(jetonId),
     timestamp: new Date().toLocaleString(),
     date: Date.now(),
-  })
-  if (history.value.length > 300) history.value.pop()
+    device: deviceName.value,
+  }
+  history.value.unshift(item)
+  if (history.value.length > 1000) history.value.pop()
+  emit('localEvent', item)
+  return item
 }
 
 function addJeton(id, type, nom) {
@@ -99,6 +136,7 @@ function updateJeton(id, type, nom) {
   if (!jeton) return
   jeton.type = type
   jeton.nom = nom
+  jeton.updatedAt = Date.now()
   save()
   toast.success('Jeton modifié')
 }
@@ -133,6 +171,7 @@ function sortirJeton(id, clientNom) {
   jeton.clientNom = clientNom || ''
   jeton.sortieAt = Date.now()
   jeton.entreeAt = null
+  jeton.updatedAt = Date.now()
   jeton.sortieCount = (jeton.sortieCount || 0) + 1
   pushMouvement(jeton.id, 'sortie', jeton.clientNom)
   save()
@@ -152,6 +191,7 @@ function rentrerJeton(id) {
   const duree = now - (jeton.sortieAt || now)
   jeton.entreeAt = now
   jeton.status = 'disponible'
+  jeton.updatedAt = now
   pushMouvement(jeton.id, 'entree', jeton.clientNom)
   jeton.clientNom = ''
   save()
@@ -171,6 +211,7 @@ function rentrerTousJetons() {
   sortis.forEach(j => {
     j.entreeAt = now
     j.status = 'disponible'
+    j.updatedAt = now
     pushMouvement(j.id, 'entree', j.clientNom)
     j.clientNom = ''
   })
@@ -206,7 +247,8 @@ function clearAllJetons() {
 
 function addHistory(data) {
   const jeton = jetons.value.find(j => j.id === data)
-  history.value.unshift({
+  const item = {
+    eventId: eventId(),
     data,
     label: jeton ? `JETON N° ${jeton.numero}` : data,
     jetonId: jeton ? jeton.id : null,
@@ -215,8 +257,11 @@ function addHistory(data) {
     type: jeton ? (jeton.type || 'JETON') : detectType(data),
     timestamp: new Date().toLocaleString(),
     date: Date.now(),
-  })
-  if (history.value.length > 300) history.value.pop()
+    device: deviceName.value,
+  }
+  history.value.unshift(item)
+  if (history.value.length > 1000) history.value.pop()
+  emit('localEvent', item)
   save()
   playFeedback()
 }
@@ -246,6 +291,68 @@ function resetAll() {
   toast.info('Données réinitialisées')
 }
 
+function sortHistory() {
+  history.value.sort((a, b) => (b.date || 0) - (a.date || 0))
+}
+
+function mergeRemoteEvents(events) {
+  if (!Array.isArray(events) || events.length === 0) return 0
+  if (!loaded) {
+    pendingRemoteEvents.push(...events)
+    return 0
+  }
+  const known = new Set(history.value.map(h => h.eventId))
+  let added = 0
+  events.forEach(e => {
+    if (!e || !e.eventId || known.has(e.eventId)) return
+    known.add(e.eventId)
+    history.value.unshift({ ...e, remote: true })
+    added++
+  })
+  if (added > 0) {
+    sortHistory()
+    if (history.value.length > 1000) history.value.length = 1000
+    save()
+  }
+  return added
+}
+
+function mergeRemoteJetons(list) {
+  if (!Array.isArray(list) || list.length === 0) return 0
+  if (!loaded) return 0
+  const byId = new Map(jetons.value.map(j => [j.id, j]))
+  let changed = false
+  list.forEach(j => {
+    if (!j || !j.id) return
+    const cur = byId.get(j.id)
+    if (!cur) {
+      byId.set(j.id, { ...newJeton(0, j.id, j.type, j.nom), ...j })
+      changed = true
+      return
+    }
+    const curTs = Math.max(cur.sortieAt || 0, cur.entreeAt || 0, cur.updatedAt || 0)
+    const newTs = Math.max(j.sortieAt || 0, j.entreeAt || 0, j.updatedAt || 0)
+    if (newTs > curTs) {
+      byId.set(j.id, { ...j })
+      changed = true
+    }
+  })
+  if (changed) {
+    jetons.value = [...byId.values()]
+    jetons.value.forEach((j, idx) => { j.numero = idx + 1 })
+    save()
+  }
+  return changed ? 1 : 0
+}
+
+on('remoteEvents', (events) => {
+  mergeRemoteEvents(events)
+})
+
+on('remoteJetons', (list) => {
+  mergeRemoteJetons(list)
+})
+
 export function useJetonStore() {
   return {
     jetons,
@@ -264,5 +371,7 @@ export function useJetonStore() {
     deleteHistoryItem,
     clearHistory,
     resetAll,
+    mergeRemoteEvents,
+    mergeRemoteJetons,
   }
 }

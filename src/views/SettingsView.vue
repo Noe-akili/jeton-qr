@@ -3,6 +3,47 @@
     <div class="page-header">
       <h1><i class="fas fa-cog"></i> Paramètres</h1>
     </div>
+
+    <h2 class="settings-section"><i class="fas fa-sync-alt"></i> Synchronisation</h2>
+    <div class="card">
+      <div class="settings-item">
+        <div class="info"><span class="title">Nom de l'appareil</span><span class="desc">Qui scanne ? (affiché sur l'historique des autres)</span></div>
+        <input class="settings-input" type="text" v-model="deviceName" @change="onDeviceName" :placeholder="'Appareil'">
+      </div>
+      <div class="settings-item">
+        <div class="info"><span class="title">Synchronisation active</span><span class="desc">Envoyer / recevoir les scans entre appareils</span></div>
+        <div class="toggle-switch" :class="{ active: serverEnabled }" @click="onToggleSync"><div class="thumb"></div></div>
+      </div>
+      <div class="settings-item">
+        <div class="info"><span class="title">Port du serveur local</span><span class="desc">Appliqué au prochain démarrage</span></div>
+        <input class="settings-input small" type="number" v-model.number="port" @change="onPort">
+      </div>
+      <div class="settings-item" v-if="status.nodeRunning">
+        <div class="info"><span class="title">Mon adresse</span><span class="desc">À donner aux autres appareils</span></div>
+        <span class="addr-chip">{{ status.ip }}:{{ status.port }}</span>
+      </div>
+      <div class="settings-item column">
+        <div class="info"><span class="title">Autres appareils</span><span class="desc">Une adresse IP:port par ligne</span></div>
+        <textarea class="settings-textarea" v-model="peersRaw" @change="onPeers" rows="3" placeholder="192.168.1.20:8123"></textarea>
+      </div>
+      <div class="settings-item">
+        <div class="info"><span class="title">Synchroniser maintenant</span><span class="desc">Récupérer les derniers scans des autres</span></div>
+        <button @click="doSync"><i class="fas fa-sync-alt"></i> Synchro</button>
+      </div>
+      <div class="settings-item">
+        <div class="info">
+          <span class="title">État</span>
+          <span class="desc">
+            <span v-if="status.nodeRunning" class="sync-ok"><i class="fas fa-circle"></i> Serveur local : {{ status.ip }}:{{ status.port }}</span>
+            <span v-else class="sync-warn"><i class="fas fa-circle"></i> Serveur local arrêté</span>
+            <span class="sync-line" v-if="status.lastSync">Dernière synchro : {{ formatTime(status.lastSync) }} · {{ status.peersOk }}/{{ status.peersTotal }} appareils</span>
+            <span class="sync-err" v-if="status.lastError">⚠ {{ status.lastError }}</span>
+          </span>
+        </div>
+      </div>
+    </div>
+
+    <h2 class="settings-section"><i class="fas fa-palette"></i> Apparence</h2>
     <div class="card">
       <div class="settings-item">
         <div class="info"><span class="title">Thème sombre</span><span class="desc">Activer le mode nuit</span></div>
@@ -18,8 +59,12 @@
           <option value="orange">Orange</option>
         </select>
       </div>
+    </div>
+
+    <h2 class="settings-section"><i class="fas fa-database"></i> Données</h2>
+    <div class="card">
       <div class="settings-item">
-        <div class="info"><span class="title">Exporter les données</span><span class="desc">Sauvegarder tout (jetons + historique)</span></div>
+        <div class="info"><span class="title">Exporter les données</span><span class="desc">Sauvegarder tout (jetons + historique + config) dans Documents</span></div>
         <button @click="exportJSON()"><i class="fas fa-file-export"></i> Exporter</button>
       </div>
       <div class="settings-item">
@@ -31,26 +76,30 @@
         <button class="danger" @click="resetAll()">Réinitialiser</button>
       </div>
       <div class="settings-item">
-        <div class="info"><span class="title">À propos</span><span class="desc">JETON-QR Pro+ v3.0</span></div>
-        <button @click="toast.info('JETON-QR App - Version 3.0 avec générateur et PDF')">Info</button>
+        <div class="info"><span class="title">À propos</span><span class="desc">JETON-QR Pro+ v4.0 — stockage natif + synchro réseau</span></div>
+        <button @click="toast.info('JETON-QR App - Version 4.0')">Info</button>
       </div>
     </div>
   </div>
 </template>
 
 <script setup>
-import { computed } from 'vue'
+import { computed, onMounted } from 'vue'
 import { useTheme } from '../composables/useTheme'
 import { useAccent } from '../composables/useAccent'
 import { useJetonStore } from '../composables/useJetonStore'
 import { useToast } from '../composables/useToast'
 import { useExport } from '../composables/useExport'
+import { useConfig } from '../composables/useConfig'
+import { useSync } from '../composables/useSync'
 
 const { theme, toggle } = useTheme()
 const { accent, change } = useAccent()
 const { resetAll } = useJetonStore()
 const toast = useToast()
 const { exportJSON, importJSON } = useExport()
+const { deviceName, serverEnabled, port, peersRaw, saveConfig } = useConfig()
+const { status, syncNow, setSyncEnabled } = useSync()
 
 const isDark = computed(() => theme.value === 'dark')
 
@@ -58,4 +107,81 @@ function changeAccent() {
   change(accent.value)
   toast.success('Couleur changée')
 }
+
+function onDeviceName() {
+  if (!deviceName.value.trim()) deviceName.value = 'Appareil'
+  saveConfig()
+  toast.success('Nom de l\'appareil enregistré')
+}
+
+function onPort() {
+  if (!port.value || port.value < 1 || port.value > 65535) port.value = 8123
+  saveConfig()
+  toast.success('Port enregistré (effet au prochain démarrage)')
+}
+
+function onPeers() {
+  saveConfig()
+  toast.success('Appareils enregistrés')
+}
+
+function onToggleSync() {
+  setSyncEnabled(!serverEnabled.value)
+  toast.info(serverEnabled.value ? 'Synchronisation activée' : 'Synchronisation désactivée')
+}
+
+async function doSync() {
+  if (!serverEnabled.value) {
+    toast.warning('Activez d\'abord la synchronisation')
+    return
+  }
+  toast.info('Synchronisation en cours...')
+  try {
+    await syncNow()
+    toast.success('Synchronisation terminée')
+  } catch (e) {
+    toast.error(e.message)
+  }
+}
+
+function formatTime(ts) {
+  if (!ts) return '—'
+  const d = new Date(ts)
+  return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+}
+
+onMounted(() => {
+  status.value.lastSync = status.value.lastSync
+})
 </script>
+
+<style scoped>
+.settings-section {
+  display: flex; align-items: center; gap: 8px;
+  font-size: 0.95rem; margin: 20px 0 8px; color: var(--text-light);
+  text-transform: uppercase; letter-spacing: 1px;
+}
+.settings-input {
+  width: 140px; padding: 6px 12px; border-radius: 40px; border: 1px solid var(--border);
+  background: var(--bg); color: var(--text); font-weight: 600; text-align: right;
+}
+.settings-input.small { width: 80px; }
+.settings-input:focus { outline: none; border-color: var(--primary); }
+.settings-item.column { flex-direction: column; align-items: flex-start; gap: 8px; }
+.settings-textarea {
+  width: 100%; box-sizing: border-box; padding: 8px 12px; border-radius: 12px;
+  border: 1px solid var(--border); background: var(--bg); color: var(--text);
+  font-family: inherit; resize: vertical;
+}
+.settings-textarea:focus { outline: none; border-color: var(--primary); }
+.addr-chip {
+  background: var(--primary-light); color: var(--primary-dark); padding: 4px 12px;
+  border-radius: 40px; font-weight: 700; font-size: 0.9rem;
+}
+.sync-line { display: block; margin-top: 2px; }
+.sync-err { display: block; margin-top: 2px; color: #EF4444; }
+.sync-ok { color: #10B981; }
+.sync-ok i { font-size: 0.6rem; }
+.sync-warn { color: var(--text-light); }
+.sync-warn i { font-size: 0.6rem; }
+</style>

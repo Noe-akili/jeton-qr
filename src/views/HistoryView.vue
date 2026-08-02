@@ -18,6 +18,7 @@
               <span class="type-tag">{{ item.type || 'TEXTE' }}</span>
               <span v-if="item.mouvement" class="mvt-tag" :class="item.mouvement">{{ item.mouvement === 'sortie' ? 'SORTIE' : 'ENTRÉE' }}</span>
               <span v-if="item.clientNom" class="client-tag"><i class="fas fa-user"></i> {{ item.clientNom }}</span>
+              <span v-if="item.device" class="device-tag"><i class="fas fa-mobile-alt"></i> {{ item.device }}</span>
             </div>
           </div>
           <button class="delete-btn" @click="deleteHistoryItem(history.indexOf(item))"><i class="fas fa-times"></i></button>

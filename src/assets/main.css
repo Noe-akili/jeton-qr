@@ -237,6 +237,10 @@ table .empty-row td { text-align:center; color:var(--text-light); padding:30px 0
 .mvt-tag.sortie { background:#FFF7ED; color:#C2410C; }
 .mvt-tag.entree { background:#D1FAE5; color:#047857; }
 .client-tag { color:var(--text-light); display:flex; align-items:center; gap:4px; }
+.device-tag {
+    padding:0 10px; border-radius:40px; font-size:0.65rem; font-weight:700; letter-spacing:0.3px;
+    background:var(--primary-light); color:var(--primary-dark); display:inline-flex; align-items:center; gap:4px;
+}
 
 /* ===== AFFICHER PLUS ===== */
 .show-more-wrap { display:flex; justify-content:center; margin-top:12px; }

@@ -1,6 +1,7 @@
 import html2pdf from 'html2pdf.js'
 import QRCode from 'qrcode'
 import { useJetonStore } from './useJetonStore'
+import { useConfig } from './useConfig'
 import { useToast } from './useToast'
 import { downloadFile } from '../utils'
 
@@ -62,17 +63,48 @@ export function useExport() {
     toast.success('CSV exporté')
   }
 
-  function exportJSON() {
-    const data = { jetons: jetons.value, history: history.value }
+  async function exportJSON() {
+    const { deviceName, serverEnabled, port, peersRaw } = useConfig()
+    const data = {
+      app: 'jeton-qr',
+      version: 4,
+      device: deviceName.value,
+      exportedAt: new Date().toISOString(),
+      config: {
+        deviceName: deviceName.value,
+        serverEnabled: serverEnabled.value,
+        port: port.value,
+        peers: peersRaw.value,
+      },
+      jetons: jetons.value,
+      history: history.value,
+    }
     const json = JSON.stringify(data, null, 2)
-    downloadFile(json, 'jeton_qr_data.json', 'application/json')
+    const filename = `jeton_qr_backup_${new Date().toISOString().slice(0, 10)}.json`
+    if (typeof window !== 'undefined' && 'Capacitor' in window) {
+      try {
+        const { Filesystem, Directory, Encoding } = await import('@capacitor/filesystem')
+        await Filesystem.writeFile({
+          path: filename,
+          data: json,
+          directory: Directory.Documents,
+          encoding: Encoding.UTF8,
+          recursive: true,
+        })
+        toast.success(`Sauvegardé dans Documents/${filename}`)
+        return
+      } catch (e) {
+        toast.warning('Échec de la sauvegarde native, téléchargement...')
+      }
+    }
+    downloadFile(json, filename, 'application/json')
     toast.success('Données exportées')
   }
 
   function importJSON() {
     const input = document.createElement('input')
     input.type = 'file'
-    input.accept = '.json'
+    input.accept = '.json,application/json'
     input.onchange = function(e) {
       const file = e.target.files[0]
       if (!file) return
@@ -80,8 +112,17 @@ export function useExport() {
       reader.onload = function(ev) {
         try {
           const data = JSON.parse(ev.target.result)
+          if (!data || typeof data !== 'object') throw new Error('bad')
           if (data.jetons) jetons.value = data.jetons
           if (data.history) history.value = data.history
+          if (data.config) {
+            const cfg = useConfig()
+            if (data.config.deviceName) cfg.deviceName.value = data.config.deviceName
+            if (data.config.serverEnabled != null) cfg.serverEnabled.value = !!data.config.serverEnabled
+            if (data.config.port) cfg.port.value = Number(data.config.port)
+            if (data.config.peers != null) cfg.peersRaw.value = data.config.peers
+            cfg.saveConfig()
+          }
           useJetonStore().save()
           toast.success('Import réussi')
         } catch (err) {

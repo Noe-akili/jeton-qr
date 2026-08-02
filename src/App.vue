@@ -32,6 +32,8 @@ import ToastContainer from './components/ui/ToastContainer.vue'
 import ScannerView from './views/ScannerView.vue'
 import { useJetonStore } from './composables/useJetonStore'
 import { useTheme } from './composables/useTheme'
+import { useConfig } from './composables/useConfig'
+import { useSync } from './composables/useSync'
 
 const GeneratorView = defineAsyncComponent(() => import('./views/GeneratorView.vue'))
 const JetonsView = defineAsyncComponent(() => import('./views/JetonsView.vue'))
@@ -76,7 +78,10 @@ function onNavClick(tab) {
 
 let backListener = null
 onMounted(async () => {
-  load()
+  const { loadConfig } = useConfig()
+  const { initSync } = useSync()
+  await Promise.all([load(), loadConfig()])
+  initSync()
   if (window.Capacitor?.Plugins?.App) {
     const { App } = window.Capacitor.Plugins
     const order = tabs.map(t => t.key)
