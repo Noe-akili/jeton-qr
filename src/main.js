@@ -5,7 +5,9 @@ import './assets/main.css'
 
 createApp(App).mount('#app')
 
-if ('serviceWorker' in navigator && import.meta.env.PROD) {
+const isCapacitor = typeof window !== 'undefined' && 'Capacitor' in window
+
+if ('serviceWorker' in navigator && import.meta.env.PROD && !isCapacitor) {
   window.addEventListener('load', () => {
     navigator.serviceWorker.register('/sw.js').catch(() => {})
   })

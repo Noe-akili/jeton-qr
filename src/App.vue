@@ -27,7 +27,7 @@
 </template>
 
 <script setup>
-import { ref, shallowRef, onMounted, defineAsyncComponent ,computed } from 'vue'
+import { ref, shallowRef, onMounted, onUnmounted, defineAsyncComponent } from 'vue'
 import ToastContainer from './components/ui/ToastContainer.vue'
 import ScannerView from './views/ScannerView.vue'
 import { useJetonStore } from './composables/useJetonStore'
@@ -74,7 +74,24 @@ function onNavClick(tab) {
   switchView(tab.key)
 }
 
-onMounted(() => {
+let backListener = null
+onMounted(async () => {
   load()
+  if (window.Capacitor?.Plugins?.App) {
+    const { App } = window.Capacitor.Plugins
+    const order = tabs.map(t => t.key)
+    backListener = App.addListener('backButton', () => {
+      const idx = order.indexOf(active.value)
+      if (idx > 0) {
+        switchView(order[idx - 1])
+      } else {
+        App.minimizeApp()
+      }
+    })
+  }
+})
+
+onUnmounted(() => {
+  backListener?.remove()
 })
 </script>
