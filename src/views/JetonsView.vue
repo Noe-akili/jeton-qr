@@ -148,7 +148,7 @@ function generateJetonsFromPrompt() {
     toast.error('Nombre invalide (1 à 200)')
     return
   }
-  const type = prompt('Type d\'appareil :', 'Charge téléphone') || 'Inconnu'
+  const type = prompt('Type d\'appareil :', 'téléphone') || 'Inconnu'
   generateJetons(count, type)
 }
 

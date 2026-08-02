@@ -27,10 +27,11 @@
 </template>
 
 <script setup>
-import { ref, shallowRef, onMounted, defineAsyncComponent } from 'vue'
+import { ref, shallowRef, onMounted, defineAsyncComponent ,computed } from 'vue'
 import ToastContainer from './components/ui/ToastContainer.vue'
 import ScannerView from './views/ScannerView.vue'
 import { useJetonStore } from './composables/useJetonStore'
+import { useTheme } from './composables/useTheme'
 
 const GeneratorView = defineAsyncComponent(() => import('./views/GeneratorView.vue'))
 const JetonsView = defineAsyncComponent(() => import('./views/JetonsView.vue'))
