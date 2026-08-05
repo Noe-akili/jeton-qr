@@ -4,10 +4,18 @@ const http = require('http')
 const fs = require('fs')
 const path = require('path')
 const os = require('os')
+const dgram = require('dgram')
 const { channel, getDataPath } = require('bridge')
 
 const PORT = Number(process.env.JETONQR_PORT) || 8123
 const MAX_EVENTS = 2000
+
+const DEVICE_NAME = process.env.JETONQR_NAME || 'Appareil'
+const DISCOVERY_PORT = Number(process.env.JETONQR_DISCOVERY_PORT) || 8591
+const DISCOVERY_GROUP = '239.255.0.42'
+const DISCOVERY_QUERY = 'JETONQR_DISCOVER'
+const DISCOVERY_INTERVAL = 4000
+const PEER_TIMEOUT = 20000
 
 const state = { jetons: [], events: [] }
 
@@ -46,6 +54,120 @@ function lanIP() {
     }
   } catch (e) {}
   return '127.0.0.1'
+}
+
+function lanIPs() {
+  const out = []
+  try {
+    const nets = os.networkInterfaces()
+    for (const name of Object.keys(nets)) {
+      for (const n of nets[name] || []) {
+        if ((n.family === 'IPv4' || n.family === 4) && !n.internal) out.push(n.address)
+      }
+    }
+  } catch (e) {}
+  return out
+}
+
+function broadcastAddrs() {
+  const out = new Set(['255.255.255.255'])
+  try {
+    const nets = os.networkInterfaces()
+    for (const name of Object.keys(nets)) {
+      for (const n of nets[name] || []) {
+        if ((n.family === 'IPv4' || n.family === 4) && n.broadcast) out.add(n.broadcast)
+      }
+    }
+  } catch (e) {}
+  return [...out]
+}
+
+const seenPeers = new Map()
+
+function peerSelf() {
+  return { app: 'jetonqr', name: DEVICE_NAME, ip: lanIPs()[0] || '127.0.0.1', port: PORT }
+}
+
+function recordPeer(data) {
+  if (!data || data.app !== 'jetonqr') return false
+  const ip = String(data.ip || '')
+  const port = Number(data.port) || PORT
+  if (!ip) return false
+  const selfIPs = lanIPs()
+  if (port === PORT && selfIPs.indexOf(ip) !== -1) return false
+  const key = ip + ':' + port
+  const now = Date.now()
+  const prev = seenPeers.get(key)
+  seenPeers.set(key, { name: String(data.name || 'Appareil').slice(0, 40), ip, port, lastSeen: now })
+  return !prev
+}
+
+function peerList() {
+  const now = Date.now()
+  for (const key of seenPeers.keys()) {
+    if (now - seenPeers.get(key).lastSeen > PEER_TIMEOUT) seenPeers.delete(key)
+  }
+  return [...seenPeers.values()]
+    .map(p => ({ name: p.name, ip: p.ip, port: p.port, lastSeen: p.lastSeen }))
+    .sort((a, b) => a.name.localeCompare(b.name))
+}
+
+function emitPeers() {
+  try { channel.send('peerList', { peers: peerList() }) } catch (e) {}
+}
+
+function startDiscovery() {
+  let udp
+  try {
+    udp = dgram.createSocket({ type: 'udp4', reuseAddr: true })
+  } catch (e) {
+    return null
+  }
+
+  udp.on('error', () => {})
+
+  udp.on('message', (msg, rinfo) => {
+    try {
+      const text = msg.toString().trim()
+      if (text === DISCOVERY_QUERY) {
+        const payload = Buffer.from(JSON.stringify({ type: 'peer', ...peerSelf() }))
+        try { udp.send(payload, rinfo.port, rinfo.address) } catch (e) {}
+        return
+      }
+      const data = JSON.parse(text)
+      if (data && data.type === 'peer') {
+        if (recordPeer(data)) emitPeers()
+      }
+    } catch (e) {}
+  })
+
+  const announce = () => {
+    const payload = Buffer.from(JSON.stringify({ type: 'peer', ...peerSelf() }))
+    broadcastAddrs().forEach(addr => {
+      try { udp.send(payload, DISCOVERY_PORT, addr) } catch (e) {}
+    })
+    try { udp.send(payload, DISCOVERY_PORT, DISCOVERY_GROUP) } catch (e) {}
+  }
+
+  udp.bind(DISCOVERY_PORT, () => {
+    try { udp.setBroadcast(true) } catch (e) {}
+    try { udp.addMembership(DISCOVERY_GROUP) } catch (e) {}
+    announce()
+  })
+
+  setInterval(announce, DISCOVERY_INTERVAL)
+  setInterval(() => { if (seenPeers.size) emitPeers() }, 5000)
+
+  channel.addListener('discoverNow', () => {
+    const q = Buffer.from(DISCOVERY_QUERY)
+    broadcastAddrs().forEach(addr => {
+      try { udp.send(q, DISCOVERY_PORT, addr) } catch (e) {}
+    })
+    announce()
+    emitPeers()
+  })
+
+  return udp
 }
 
 function mergeEvents(list) {
@@ -124,7 +246,7 @@ async function handleRequest(req, res) {
     if (req.method === 'GET' && p === '/api/status') {
       sendJSON(res, 200, {
         ok: true,
-        name: 'jetonqr',
+        name: DEVICE_NAME,
         ip: lanIP(),
         port: PORT,
         eventCount: state.events.length,
@@ -202,6 +324,7 @@ channel.addListener('pushEvent', (payload) => {
 })
 
 loadData()
+startDiscovery()
 
 const server = http.createServer(handleRequest)
 server.on('error', (err) => {

@@ -43,6 +43,46 @@
       </div>
     </div>
 
+    <h2 class="settings-section"><i class="fas fa-network-wired"></i> Appareils du réseau</h2>
+    <div class="card">
+      <div class="settings-item">
+        <div class="info">
+          <span class="title">Détection automatique</span>
+          <span class="desc">Rechercher les appareils avec l'app sur le même réseau (Wi-Fi, partage USB, hotspot)</span>
+        </div>
+        <div class="toggle-switch" :class="{ active: discoveryOn }" @click="onToggleDiscovery"><div class="thumb"></div></div>
+      </div>
+      <div class="settings-item">
+        <div class="info"><span class="title">Scanner le réseau</span><span class="desc">Chercher les autres appareils maintenant</span></div>
+        <button @click="doDiscover"><i class="fas fa-search"></i> Scanner</button>
+      </div>
+      <div class="settings-item column">
+        <div class="info">
+          <span class="title">Appareils trouvés</span>
+          <span class="desc">Appuyez sur « Ajouter » pour les synchroniser</span>
+        </div>
+        <div class="peer-list">
+          <div v-if="discoveredPeers.length === 0" class="peer-empty">
+            {{ discoveryOn ? 'Aucun appareil détecté pour le moment...' : 'Activez la détection ou lancez un scan pour trouver les appareils.' }}
+          </div>
+          <div v-for="p in discoveredPeers" :key="p.ip + ':' + p.port" class="peer-row">
+            <div class="peer-info">
+              <span class="peer-name"><i class="fas fa-mobile-alt"></i> {{ p.name }}</span>
+              <span class="peer-addr">{{ p.ip }}:{{ p.port }}</span>
+            </div>
+            <button v-if="!isPeerAdded(p)" class="peer-add" @click="addPeer(p)"><i class="fas fa-plus"></i> Ajouter</button>
+            <span v-else class="peer-added"><i class="fas fa-check"></i> Ajouté</span>
+          </div>
+        </div>
+      </div>
+      <div class="settings-item">
+        <div class="info">
+          <span class="title">À propos</span>
+          <span class="desc">La détection fonctionne sur le même réseau local (Wi-Fi, USB, hotspot). Pour une liaison internet, ajoutez l'adresse IP:port manuellement dans « Autres appareils ».</span>
+        </div>
+      </div>
+    </div>
+
     <h2 class="settings-section"><i class="fas fa-palette"></i> Apparence</h2>
     <div class="card">
       <div class="settings-item">
@@ -98,8 +138,8 @@ const { accent, change } = useAccent()
 const { resetAll } = useJetonStore()
 const toast = useToast()
 const { exportJSON, importJSON } = useExport()
-const { deviceName, serverEnabled, port, peersRaw, saveConfig } = useConfig()
-const { status, syncNow, setSyncEnabled } = useSync()
+const { deviceName, serverEnabled, port, peersRaw, saveConfig, peersList } = useConfig()
+const { status, syncNow, setSyncEnabled, discoveredPeers, discoveryOn, discoverNow, setDiscoveryOn } = useSync()
 
 const isDark = computed(() => theme.value === 'dark')
 
@@ -123,6 +163,36 @@ function onPort() {
 function onPeers() {
   saveConfig()
   toast.success('Appareils enregistrés')
+}
+
+function onToggleDiscovery() {
+  setDiscoveryOn(!discoveryOn.value)
+  toast.info(discoveryOn.value ? 'Détection activée' : 'Détection désactivée')
+}
+
+function doDiscover() {
+  if (!status.nodeRunning) {
+    toast.warning('Serveur local non démarré')
+    return
+  }
+  toast.info('Scan du réseau en cours...')
+  discoverNow()
+}
+
+function isPeerAdded(p) {
+  const addr = p.ip + ':' + p.port
+  return peersList().some(x => x === addr)
+}
+
+function addPeer(p) {
+  const addr = p.ip + ':' + p.port
+  if (isPeerAdded(p)) {
+    toast.info('Déjà dans la liste')
+    return
+  }
+  peersRaw.value = (peersRaw.value.trim() ? peersRaw.value.trim() + '\n' : '') + addr
+  saveConfig()
+  toast.success(`${p.name} ajouté (${addr})`)
 }
 
 function onToggleSync() {
@@ -178,6 +248,24 @@ onMounted(() => {
   background: var(--primary-light); color: var(--primary-dark); padding: 4px 12px;
   border-radius: 40px; font-weight: 700; font-size: 0.9rem;
 }
+.peer-list {
+  display: flex; flex-direction: column; gap: 8px; width: 100%; box-sizing: border-box;
+}
+.peer-row {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  padding: 10px 12px; border: 1px solid var(--border); border-radius: 12px;
+  background: var(--bg);
+}
+.peer-info { display: flex; flex-direction: column; min-width: 0; }
+.peer-name { font-weight: 700; font-size: 0.92rem; color: var(--text); }
+.peer-addr { font-size: 0.8rem; color: var(--text-light); font-family: monospace; }
+.peer-add {
+  padding: 6px 12px; border-radius: 40px; border: none; cursor: pointer;
+  background: var(--primary); color: #fff; font-weight: 700; font-size: 0.82rem;
+  white-space: nowrap;
+}
+.peer-added { color: #10B981; font-weight: 700; font-size: 0.85rem; white-space: nowrap; }
+.peer-empty { text-align: center; color: var(--text-light); font-size: 0.85rem; padding: 12px; width: 100%; }
 .sync-line { display: block; margin-top: 2px; }
 .sync-err { display: block; margin-top: 2px; color: #EF4444; }
 .sync-ok { color: #10B981; }

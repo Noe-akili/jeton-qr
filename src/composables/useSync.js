@@ -17,9 +17,13 @@ const status = ref({
   peersTotal: 0,
 })
 
+const discoveredPeers = ref([])
+const discoveryOn = ref(false)
+
 let nodeReady = false
 let nodeStarted = false
 let pollTimer = null
+let discoveryTimer = null
 
 function waitNodeReady(timeout) {
   return new Promise(resolve => {
@@ -112,6 +116,27 @@ function stopPolling() {
   }
 }
 
+function discoverNow() {
+  if (!nodeReady) return
+  NodeJS.send({ eventName: 'discoverNow' }).catch(() => {})
+}
+
+function setDiscoveryOn(v) {
+  discoveryOn.value = !!v
+  if (discoveryOn.value) {
+    discoverNow()
+    if (!discoveryTimer) discoveryTimer = setInterval(() => discoverNow(), 5000)
+  } else if (discoveryTimer) {
+    clearInterval(discoveryTimer)
+    discoveryTimer = null
+  }
+}
+
+function handlePeerList(d) {
+  const msg = (d.args && d.args[0]) || {}
+  if (Array.isArray(msg.peers)) discoveredPeers.value = msg.peers
+}
+
 async function startNode() {
   if (!isCapacitor || nodeStarted) return
   nodeStarted = true
@@ -137,7 +162,8 @@ async function startNode() {
       const msg = (d.args && d.args[0]) || {}
       if (msg.jetons) useJetonStore().mergeRemoteJetons(msg.jetons)
     })
-    await NodeJS.start({ env: { JETONQR_PORT: String(cfg.port.value) } })
+    NodeJS.addListener('peerList', handlePeerList)
+    await NodeJS.start({ env: { JETONQR_PORT: String(cfg.port.value), JETONQR_NAME: cfg.deviceName.value } })
     const ready = await waitNodeReady(8000)
     if (!ready && !status.value.nodeRunning) {
       status.value.lastError = 'Serveur local non démarré (délai dépassé)'
@@ -180,5 +206,15 @@ on('storeLoaded', () => {
 })
 
 export function useSync() {
-  return { status, initSync, syncNow, setSyncEnabled, pushStateToServer }
+  return {
+    status,
+    discoveredPeers,
+    discoveryOn,
+    initSync,
+    syncNow,
+    setSyncEnabled,
+    discoverNow,
+    setDiscoveryOn,
+    pushStateToServer,
+  }
 }

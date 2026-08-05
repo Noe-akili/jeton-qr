@@ -1,10 +1,16 @@
-const CACHE = 'jetonqr-v2'
-const CORE = ['/', '/manifest.webmanifest', '/icon-192.png', '/icon-512.png', '/icon-512-maskable.png']
+const CACHE = 'jetonqr-' + __CACHE_VERSION__
+const PRECACHE = __PRECACHE__
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
     caches.open(CACHE)
-      .then((cache) => cache.addAll(CORE))
+      .then(async (cache) => {
+        for (const url of PRECACHE) {
+          try {
+            await cache.add(url)
+          } catch (e) {}
+        }
+      })
       .then(() => self.skipWaiting())
   )
 })
@@ -38,14 +44,16 @@ self.addEventListener('fetch', (event) => {
 
   event.respondWith(
     caches.match(request).then((cached) => {
-      if (cached) return cached
-      return fetch(request).then((response) => {
-        if (response && response.ok) {
-          const copy = response.clone()
-          caches.open(CACHE).then((cache) => cache.put(request, copy))
-        }
-        return response
-      })
+      const fetched = fetch(request)
+        .then((response) => {
+          if (response && response.ok) {
+            const copy = response.clone()
+            caches.open(CACHE).then((cache) => cache.put(request, copy))
+          }
+          return response
+        })
+        .catch(() => cached)
+      return cached || fetched
     })
   )
 })
